@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>五子棋 - 人机对战</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>五子棋</h1>
+      <p class="subtitle">人机对战 · 15×15</p>
+    </header>
+
+    <main class="game-area">
+      <div class="board-wrapper">
+        <canvas id="board"></canvas>
+      </div>
+
+      <aside class="sidebar">
+        <div class="status-panel">
+          <div id="status-text" class="status-text">你的回合（黑棋）</div>
+          <div id="thinking-indicator" class="thinking hidden">
+            <span class="dot-animation"></span> AI 思考中...
+          </div>
+        </div>
+
+        <div class="info-panel">
+          <div class="info-row">
+            <span class="piece-icon black"></span>
+            <span>你（黑棋）</span>
+          </div>
+          <div class="info-row">
+            <span class="piece-icon white"></span>
+            <span>AI（白棋）</span>
+          </div>
+          <div class="info-row">
+            <span>步数：</span>
+            <span id="move-count">0</span>
+          </div>
+        </div>
+
+        <div class="controls">
+          <button id="btn-undo" class="btn">悔棋</button>
+          <button id="btn-restart" class="btn btn-primary">重新开始</button>
+        </div>
+      </aside>
+    </main>
+
+    <div id="result-modal" class="modal hidden">
+      <div class="modal-content">
+        <h2 id="result-text"></h2>
+        <button id="btn-play-again" class="btn btn-primary">再来一局</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

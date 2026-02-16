@@ -1,0 +1,6 @@
+[project]
+name = "gomoku"
+version = "0.1.0"
+description = "Web 五子棋游戏 - 人机对战"
+requires-python = ">=3.10"
+dependencies = []
