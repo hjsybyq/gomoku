@@ -13,6 +13,7 @@ export class BoardRenderer {
 
     // 点击回调，由 main.js 设置
     this.onClick = null;
+    this._renderScheduled = false; // requestAnimationFrame 节流标记
 
     this._initCanvas();
     this._bindEvents();
@@ -32,21 +33,37 @@ export class BoardRenderer {
     this.logicalSize = logicalSize;
   }
 
+  // 请求重绘（通过 requestAnimationFrame 节流）
+  _scheduleRender() {
+    if (this._renderScheduled) return;
+    this._renderScheduled = true;
+    requestAnimationFrame(() => {
+      this._renderScheduled = false;
+      this.render();
+    });
+  }
+
   // 绑定鼠标事件
   _bindEvents() {
     this.canvas.addEventListener('mousemove', (e) => {
       const pos = this._pixelToBoard(e.offsetX, e.offsetY);
-      if (pos && this.game.board[pos.x][pos.y] === EMPTY) {
-        this.hoverPos = pos;
-      } else {
-        this.hoverPos = null;
-      }
-      this.render();
+      const newHover = (pos && this.game.board[pos.x][pos.y] === EMPTY) ? pos : null;
+
+      // 仅在悬停位置变化时才重绘
+      const oldX = this.hoverPos?.x ?? -1;
+      const oldY = this.hoverPos?.y ?? -1;
+      const newX = newHover?.x ?? -1;
+      const newY = newHover?.y ?? -1;
+      if (oldX === newX && oldY === newY) return;
+
+      this.hoverPos = newHover;
+      this._scheduleRender();
     });
 
     this.canvas.addEventListener('mouseleave', () => {
+      if (!this.hoverPos) return;
       this.hoverPos = null;
-      this.render();
+      this._scheduleRender();
     });
 
     this.canvas.addEventListener('click', (e) => {

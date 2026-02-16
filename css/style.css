@@ -69,7 +69,7 @@ header h1 {
 }
 
 #board {
-  cursor: pointer;
+  cursor: pointer; /* 默认值，由 JS 根据游戏状态动态切换 */
   display: block;
 }
 
@@ -181,6 +181,12 @@ header h1 {
 
 .btn:active {
   transform: translateY(0);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .btn-primary {

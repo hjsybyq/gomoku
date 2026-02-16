@@ -19,32 +19,29 @@ export class AIPlayer {
     this.aiColor = WHITE;
     this.humanColor = BLACK;
     this.maxDepth = 4;          // 默认搜索深度
-    this.onThinking = null;     // 思考状态回调
   }
 
-  // 异步接口，避免阻塞 UI
-  async think(board, history) {
-    this.onThinking?.(true);
-
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const move = this._findBestMove(board, history);
-        this.onThinking?.(false);
-        resolve(move);
-      }, 50);
-    });
-  }
-
-  // 寻找最佳落子点
-  _findBestMove(board, history) {
-    // 第一手：下在天元
+  // 寻找最佳落子点（供 Worker 直接调用）
+  findBestMove(board, history) {
+    // 第一手：下在天元或玩家棋子的随机相邻位置
     if (history.length <= 1) {
       const center = Math.floor(BOARD_SIZE / 2);
       if (board[center][center] === EMPTY) {
         return { x: center, y: center };
       }
-      // 天元被占则下在旁边
-      return { x: center + 1, y: center };
+      // 天元被占，在玩家第一手棋的相邻位置中随机选取
+      const last = history[0];
+      const offsets = [
+        [-1, -1], [-1, 0], [-1, 1],
+        [0, -1],           [0, 1],
+        [1, -1],  [1, 0],  [1, 1],
+      ];
+      const validOffsets = offsets.filter(([dx, dy]) => {
+        const nx = last.x + dx, ny = last.y + dy;
+        return nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE && board[nx][ny] === EMPTY;
+      });
+      const pick = validOffsets[Math.floor(Math.random() * validOffsets.length)];
+      return { x: last.x + pick[0], y: last.y + pick[1] };
     }
 
     // 必杀/必防检测
@@ -60,7 +57,7 @@ export class AIPlayer {
     this._sortCandidates(candidates, board, this.aiColor);
 
     let bestScore = -Infinity;
-    let bestMove = candidates[0]; // 兜底
+    let bestMove = candidates[0];
 
     for (const { x, y } of candidates) {
       board[x][y] = this.aiColor;
@@ -78,7 +75,6 @@ export class AIPlayer {
 
   // Negamax + Alpha-Beta 剪枝
   _negamax(board, depth, alpha, beta, color) {
-    // 终止条件
     if (depth === 0) {
       const score = this._evaluate(board);
       return color === this.aiColor ? score : -score;
@@ -89,7 +85,6 @@ export class AIPlayer {
 
     this._sortCandidates(candidates, board, color);
 
-    // 限制候选点数量，提升性能
     const maxCandidates = depth >= 3 ? 12 : 15;
     const limited = candidates.slice(0, maxCandidates);
 
@@ -98,10 +93,9 @@ export class AIPlayer {
     for (const { x, y } of limited) {
       board[x][y] = color;
 
-      // 检查是否获胜
       if (this._hasWin(board, x, y, color)) {
         board[x][y] = EMPTY;
-        return 1000000 - (this.maxDepth - depth); // 越快赢分越高
+        return 1000000 - (this.maxDepth - depth);
       }
 
       const nextColor = color === this.aiColor ? this.humanColor : this.aiColor;
@@ -110,7 +104,7 @@ export class AIPlayer {
 
       if (score > bestScore) bestScore = score;
       if (score > alpha) alpha = score;
-      if (alpha >= beta) break; // 剪枝
+      if (alpha >= beta) break;
     }
 
     return bestScore;
@@ -120,7 +114,7 @@ export class AIPlayer {
   _checkUrgent(board) {
     const candidates = this._getCandidates(board);
 
-    // 检查 AI 是否能直接赢（活四/冲四）
+    // AI 能直接赢
     for (const { x, y } of candidates) {
       board[x][y] = this.aiColor;
       if (this._hasWin(board, x, y, this.aiColor)) {
@@ -130,7 +124,7 @@ export class AIPlayer {
       board[x][y] = EMPTY;
     }
 
-    // 检查是否需要防守对手的活四/冲四
+    // 防守对手五连
     for (const { x, y } of candidates) {
       board[x][y] = this.humanColor;
       if (this._hasWin(board, x, y, this.humanColor)) {
@@ -143,7 +137,7 @@ export class AIPlayer {
     return null;
   }
 
-  // 快速检查 (x, y) 处落子后是否形成五连
+  // 快速检查是否形成五连
   _hasWin(board, x, y, color) {
     const directions = [[1, 0], [0, 1], [1, 1], [1, -1]];
 
@@ -177,7 +171,6 @@ export class AIPlayer {
     for (let x = 0; x < BOARD_SIZE; x++) {
       for (let y = 0; y < BOARD_SIZE; y++) {
         if (board[x][y] !== EMPTY) {
-          // 周围 2 格范围
           for (let dx = -2; dx <= 2; dx++) {
             for (let dy = -2; dy <= 2; dy++) {
               const nx = x + dx, ny = y + dy;
@@ -201,7 +194,6 @@ export class AIPlayer {
     const opponent = color === this.aiColor ? this.humanColor : this.aiColor;
 
     for (const c of candidates) {
-      // 快速评估该位置的价值
       board[c.x][c.y] = color;
       const attackScore = this._evaluatePoint(board, c.x, c.y, color);
       board[c.x][c.y] = EMPTY;
@@ -216,7 +208,7 @@ export class AIPlayer {
     candidates.sort((a, b) => b.score - a.score);
   }
 
-  // 评估某点落子后该棋子参与的棋型分值
+  // 评估某点落子后该棋子参与的棋型分值（用于候选点排序）
   _evaluatePoint(board, x, y, color) {
     let score = 0;
     const directions = [[1, 0], [0, 1], [1, 1], [1, -1]];
@@ -232,17 +224,14 @@ export class AIPlayer {
   _evaluateLine(board, x, y, dx, dy, color) {
     const opponent = color === this.aiColor ? this.humanColor : this.aiColor;
 
-    // 向两个方向扫描，收集连续同色棋子数和两端空位情况
     let count = 1;
     let openEnds = 0;
-    let blocked = 0;
 
     // 正方向
     let consecutive = 0;
     for (let i = 1; i <= 4; i++) {
       const nx = x + dx * i, ny = y + dy * i;
       if (nx < 0 || nx >= BOARD_SIZE || ny < 0 || ny >= BOARD_SIZE) {
-        blocked++;
         break;
       }
       if (board[nx][ny] === color) {
@@ -251,7 +240,6 @@ export class AIPlayer {
         openEnds++;
         break;
       } else {
-        blocked++;
         break;
       }
     }
@@ -262,7 +250,6 @@ export class AIPlayer {
     for (let i = 1; i <= 4; i++) {
       const nx = x - dx * i, ny = y - dy * i;
       if (nx < 0 || nx >= BOARD_SIZE || ny < 0 || ny >= BOARD_SIZE) {
-        blocked++;
         break;
       }
       if (board[nx][ny] === color) {
@@ -271,16 +258,13 @@ export class AIPlayer {
         openEnds++;
         break;
       } else {
-        blocked++;
         break;
       }
     }
     count += consecutive;
 
-    // 两端都被堵，无价值
     if (openEnds === 0 && count < 5) return 0;
 
-    // 根据连子数和开放端评分
     if (count >= 5) return SCORE.FIVE;
     if (count === 4) {
       if (openEnds === 2) return SCORE.LIVE_FOUR;
@@ -301,22 +285,124 @@ export class AIPlayer {
     return 0;
   }
 
-  // 全局评估函数：AI 视角
+  // 全局评估函数：按行/列/对角线逐条扫描，避免重复计算
   _evaluate(board) {
     let aiScore = 0;
     let humanScore = 0;
 
-    // 扫描所有位置
+    // 扫描所有行
+    for (let y = 0; y < BOARD_SIZE; y++) {
+      const line = [];
+      for (let x = 0; x < BOARD_SIZE; x++) line.push(board[x][y]);
+      const result = this._evaluateLineSequence(line);
+      aiScore += result.ai;
+      humanScore += result.human;
+    }
+
+    // 扫描所有列
     for (let x = 0; x < BOARD_SIZE; x++) {
-      for (let y = 0; y < BOARD_SIZE; y++) {
-        if (board[x][y] === this.aiColor) {
-          aiScore += this._evaluatePoint(board, x, y, this.aiColor);
-        } else if (board[x][y] === this.humanColor) {
-          humanScore += this._evaluatePoint(board, x, y, this.humanColor);
+      const line = [];
+      for (let y = 0; y < BOARD_SIZE; y++) line.push(board[x][y]);
+      const result = this._evaluateLineSequence(line);
+      aiScore += result.ai;
+      humanScore += result.human;
+    }
+
+    // 扫描主对角线（左上到右下）
+    for (let start = -(BOARD_SIZE - 1); start < BOARD_SIZE; start++) {
+      const line = [];
+      for (let i = 0; i < BOARD_SIZE; i++) {
+        const x = start + i, y = i;
+        if (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE) {
+          line.push(board[x][y]);
         }
+      }
+      if (line.length >= 5) {
+        const result = this._evaluateLineSequence(line);
+        aiScore += result.ai;
+        humanScore += result.human;
       }
     }
 
-    return aiScore - humanScore * 1.1; // 防守权重略高
+    // 扫描副对角线（右上到左下）
+    for (let start = 0; start < 2 * BOARD_SIZE - 1; start++) {
+      const line = [];
+      for (let i = 0; i < BOARD_SIZE; i++) {
+        const x = start - i, y = i;
+        if (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE) {
+          line.push(board[x][y]);
+        }
+      }
+      if (line.length >= 5) {
+        const result = this._evaluateLineSequence(line);
+        aiScore += result.ai;
+        humanScore += result.human;
+      }
+    }
+
+    return aiScore - humanScore * 1.1;
+  }
+
+  // 评估一条线上的所有棋型（滑动窗口，避免重复统计）
+  _evaluateLineSequence(line) {
+    let ai = 0;
+    let human = 0;
+    const len = line.length;
+
+    // 使用滑动窗口扫描连续同色子段
+    let i = 0;
+    while (i < len) {
+      if (line[i] === EMPTY) {
+        i++;
+        continue;
+      }
+
+      const color = line[i];
+      let count = 0;
+
+      // 统计连续同色棋子
+      const start = i;
+      while (i < len && line[i] === color) {
+        count++;
+        i++;
+      }
+
+      // 检查两端开放情况
+      let openEnds = 0;
+      if (start > 0 && line[start - 1] === EMPTY) openEnds++;
+      if (i < len && line[i] === EMPTY) openEnds++;
+
+      if (openEnds === 0 && count < 5) continue;
+
+      const score = this._getShapeScore(count, openEnds);
+      if (color === this.aiColor) {
+        ai += score;
+      } else {
+        human += score;
+      }
+    }
+
+    return { ai, human };
+  }
+
+  // 根据连子数和开放端数返回棋型分值
+  _getShapeScore(count, openEnds) {
+    if (count >= 5) return SCORE.FIVE;
+    if (count === 4) {
+      if (openEnds === 2) return SCORE.LIVE_FOUR;
+      if (openEnds === 1) return SCORE.RUSH_FOUR;
+    }
+    if (count === 3) {
+      if (openEnds === 2) return SCORE.LIVE_THREE;
+      if (openEnds === 1) return SCORE.SLEEP_THREE;
+    }
+    if (count === 2) {
+      if (openEnds === 2) return SCORE.LIVE_TWO;
+      if (openEnds === 1) return SCORE.SLEEP_TWO;
+    }
+    if (count === 1) {
+      if (openEnds === 2) return SCORE.LIVE_ONE;
+    }
+    return 0;
   }
 }
